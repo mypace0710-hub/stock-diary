@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#6841e8">
+<link rel="manifest" href="manifest.json">
+<title>株日記</title>
+<style>
+:root{--purple:#6841e8;--bg:#f6f5fb;--ink:#202033;--muted:#77778b;--red:#e74747;--blue:#2877ed}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;background:var(--bg);color:var(--ink);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{background:white;padding:14px 16px;position:sticky;top:0;z-index:2;border-bottom:1px solid #e5e1f5;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:21px;margin:0}button,.filebtn{border:0;border-radius:10px;padding:10px 13px;background:#eeeafc;color:var(--purple);font-weight:700;font-size:14px;cursor:pointer}
+button.primary{background:var(--purple);color:white}button.danger{color:#b42323;background:#fee}
+main{max-width:760px;margin:auto;padding:12px}
+.card{background:white;border:1px solid #e6e2f5;border-radius:15px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px #30205008}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+input,textarea,select{width:100%;font:inherit;padding:11px;border:1px solid #ddd9ec;border-radius:9px;background:#fff;color:var(--ink)}
+textarea{min-height:76px;resize:vertical}.field{margin:12px 0}.field label{display:block;font-weight:700;font-size:14px;margin-bottom:5px}
+.stock-list{display:flex;gap:7px;overflow-x:auto;padding:2px 0 8px}.stock{white-space:nowrap;background:white;border:1px solid #ddd!important}.stock.selected{background:#eee9ff;border-color:var(--purple)!important;color:var(--purple)}
+.chartbox{background:#171b2c;border-radius:10px;overflow:hidden}.chartbox canvas{display:block;width:100%;height:auto;touch-action:none}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.tools button{padding:8px 10px;font-size:13px}.tools button.on{background:var(--purple);color:white}
+.buy{color:var(--red)}.sell{color:var(--blue)}.muted{font-size:12px;color:var(--muted)}
+input[type=file]{display:none}
+#toast{font-size:12px;color:#16803c;margin-top:8px}
+</style>
+</head>
+<body>
+<header><h1>📈 株日記</h1><div class="row" style="flex:0 0 auto"><button id="new">＋ 新規</button><button class="primary" id="save">保存</button></div></header>
+<main>
+<section class="card">
+<div class="row"><div><label>銘柄を選択</label><select id="entries"></select></div><button id="delete" class="danger" style="flex:0 0 auto;margin-top:20px">削除</button></div>
+<div class="row" style="margin-top:10px"><button id="backup">バックアップ出力</button><label class="filebtn" style="text-align:center">バックアップ読込<input id="restore" type="file" accept=".json,application/json"></label></div>
+</section>
+<section class="card">
+<div class="row">
+<div class="field"><label>銘柄コード</label><input id="code" placeholder="7203"></div>
+<div class="field"><label>銘柄名</label><input id="name" placeholder="トヨタ自動車"></div>
+</div>
+<div class="row">
+<div class="field"><label>取引日</label><input id="date" type="date"></div>
+<div class="field"><label>状態</label><select id="status"><option>監視中</option><option>保有中</option><option>売却済</option></select></div>
+</div>
+</section>
+<section class="card">
+<strong>チャート画像・売買ポイント</strong>
+<div class="row" style="margin:9px 0"><label class="filebtn" style="text-align:center">スクショを選ぶ<input id="chartfile" type="file" accept="image/*"></label><button id="clearMarks">書き込み消去</button></div>
+<div class="tools">
+<button class="on" data-tool="buy">🔴 買値</button><button data-tool="sell">🔵 売値</button><button data-tool="text">✏️ コメント</button><button data-tool="draw">🖊 手書き</button><button id="undo">↩ 戻す</button>
+</div>
+<div class="chartbox"><canvas id="canvas" width="900" height="500"></canvas></div>
+<div class="muted" style="margin-top:5px">ツールを選んで画像上をタップ。既存のマークは長押ししてから指を動かすと移動できます。手書きは指でなぞれます。</div>
+<div class="row">
+<div class="field"><label class="buy">🔴 買値（円）</label><input id="buyPrice" type="number" placeholder="2850"></div>
+<div class="field"><label class="sell">🔵 売値（円）</label><input id="sellPrice" type="number" placeholder="2915"></div>
+</div>
+</section>
+<section class="card">
+<div class="field"><label>購入理由</label><textarea id="reason" placeholder="なぜ買った？材料・チャート・出来高など"></textarea></div>
+<div class="field"><label>売るタイミング・売却条件</label><textarea id="plan" placeholder="利確目標、損切りライン、売却条件"></textarea></div>
+<div class="field"><label>実際どうしたか</label><textarea id="actual" placeholder="実際の売買、結果、予定通りだったか"></textarea></div>
+<div class="field"><label>反省・コメント</label><textarea id="comment" placeholder="気づき、反省、次回に活かすこと"></textarea></div>
+<div id="toast"></div>
+</section>
+<p class="muted">このアプリは端末内に記録を保存します。機種変更やブラウザデータ削除に備えて、定期的にバックアップを出力してください。</p>
+</main>
+<script>
+const $=id=>document.getElementById(id), keys=['code','name','date','status','buyPrice','sellPrice','reason','plan','actual','comment'];
+let data=[],idx=-1,tool='buy',image=null,marks=[],undoStack=[];
+try{data=JSON.parse(localStorage.getItem('stockDiary')||'[]')}catch(e){}
+const cv=$('canvas'),ctx=cv.getContext('2d');
+$('date').value=new Date().toISOString().slice(0,10);
+function blank(){return {code:'',name:'',date:new Date().toISOString().slice(0,10),status:'監視中',buyPrice:'',sellPrice:'',reason:'',plan:'',actual:'',comment:'',image:'',marks:[]}}
+function draw(){
+ ctx.clearRect(0,0,cv.width,cv.height);
+ if(image)ctx.drawImage(image,0,0,cv.width,cv.height);
+ else{ctx.fillStyle='#171b2c';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle='#343b53';for(let x=0;x<cv.width;x+=90){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke()}for(let y=0;y<cv.height;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke()}ctx.fillStyle='#cbd0e2';ctx.font='25px sans-serif';ctx.fillText('チャートのスクショを選択してください',150,245)}
+ marks.forEach(m=>{ctx.strokeStyle=ctx.fillStyle=m.color;ctx.lineWidth=5;ctx.font='bold 25px sans-serif';if(m.type==='draw'){ctx.beginPath();m.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}else if(m.type==='buy'||m.type==='sell'){ctx.beginPath();ctx.arc(m.x,m.y,16,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.moveTo(m.x,m.y+17);ctx.lineTo(m.x-15,m.y+43);ctx.stroke();ctx.fillText(m.label,m.x+20,m.y-12)}else ctx.fillText(m.label,m.x,m.y)});
+}
+function renderList(){let s=$('entries');s.innerHTML='';data.forEach((r,i)=>{let o=document.createElement('option');o.value=i;o.textContent=(r.code||'')+' '+(r.name||'未入力')+' / '+(r.date||'');s.appendChild(o)});s.value=idx>=0?idx:''}
+function load(i){idx=i;let r=data[i];keys.forEach(k=>$(k).value=r[k]||'');marks=structuredClone(r.marks||[]);image=null;if(r.image){image=new Image();image.onload=draw;image.src=r.image}draw();renderList()}
+function fresh(){idx=-1;keys.forEach(k=>$(k).value='');$('date').value=new Date().toISOString().slice(0,10);$('status').value='監視中';image=null;marks=[];draw();renderList()}
+function save(){let r={};keys.forEach(k=>r[k]=$(k).value);r.marks=marks;r.image=image?image.src:'';if(!r.code&&!r.name){$('toast').textContent='銘柄コードまたは銘柄名を入力してください';return}if(idx<0){data.unshift(r);idx=0}else data[idx]=r;try{localStorage.setItem('stockDiary',JSON.stringify(data));$('toast').textContent='保存しました ✓';renderList();$('entries').value=idx}catch(e){$('toast').textContent='画像が大きすぎる可能性があります。小さめのスクショでお試しください。'}}
+$('new').onclick=fresh;$('save').onclick=save;$('entries').onchange=e=>load(+e.target.value);
+$('delete').onclick=()=>{if(idx>=0&&confirm('この記録を削除しますか？')){data.splice(idx,1);localStorage.setItem('stockDiary',JSON.stringify(data));fresh()}};
+$('chartfile').onchange=e=>{let f=e.target.files[0];if(!f)return;let reader=new FileReader();reader.onload=()=>{image=new Image();image.onload=draw;image.src=reader.result;marks=[]};reader.readAsDataURL(f)};
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('on',x===b))});
+function point(e){let r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*cv.width/r.width,y:(e.clientY-r.top)*cv.height/r.height}}
+let drawing=false,active=null,longPressTimer=null,dragMark=null,dragStart=null,pointerStart=null,longPressed=false;
+function nearestMark(p){let best=-1,bestDist=42;marks.forEach((m,i)=>{let d;if(m.type==='draw'){d=Math.min(...m.points.map(q=>Math.hypot(q.x-p.x,q.y-p.y)))}else d=Math.hypot((m.x||0)-p.x,(m.y||0)-p.y);if(d<bestDist){best=i;bestDist=d}});return best}
+cv.onpointerdown=e=>{
+ e.preventDefault();let p=point(e);pointerStart=p;longPressed=false;
+ if(tool==='draw'){drawing=true;active={type:'draw',color:'#ffcf55',points:[p]};marks.push(active);cv.setPointerCapture(e.pointerId);draw();return}
+ // 既存の印の上なら、長押しで移動モード
+ let hit=nearestMark(p);
+ if(hit>=0){longPressTimer=setTimeout(()=>{dragMark=marks[hit];dragStart=point(pointerStartEvent);longPressed=true;cv.setPointerCapture(e.pointerId);$('toast').textContent='マークを移動中…指を離すと位置が決まります';},420);}
+ pointerStartEvent=e;
+};
+cv.onpointermove=e=>{
+ let p=point(e);
+ if(drawing&&active){active.points.push(p);draw();return}
+ if(dragMark&&longPressed){if(dragMark.type==='draw'){let dx=p.x-dragStart.x,dy=p.y-dragStart.y;dragMark.points=dragMark.points.map(q=>({x:q.x+dx,y:q.y+dy}));dragStart=p}else{dragMark.x=p.x;dragMark.y=p.y}draw();return}
+ if(longPressTimer && pointerStart && Math.hypot(p.x-pointerStart.x,p.y-pointerStart.y)>12){clearTimeout(longPressTimer);longPressTimer=null}
+};
+cv.onpointerup=e=>{
+ if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}
+ if(dragMark){dragMark=null;dragStart=null;$('toast').textContent='位置を変更しました。保存ボタンを押して保存してください';}
+ if(!drawing&&!longPressed){let p=point(e);let color=tool==='buy'?'#ff4545':tool==='sell'?'#3995ff':'#ffcf55',label=tool==='buy'?'買 '+($('buyPrice').value||'?')+'円':tool==='sell'?'売 '+($('sellPrice').value||'?')+'円':prompt('チャート上に書くコメント');if(label)marks.push({type:tool,x:p.x,y:p.y,color,label});draw()}
+ drawing=false;active=null;pointerStart=null;longPressed=false;
+};
+cv.onpointercancel=()=>{if(longPressTimer)clearTimeout(longPressTimer);longPressTimer=null;drawing=false;active=null;dragMark=null;pointerStart=null;longPressed=false};
+$('undo').onclick=()=>{marks.pop();draw()};$('clearMarks').onclick=()=>{if(confirm('チャートのマークを全部消しますか？')){marks=[];draw()}};
+$('backup').onclick=()=>{let blob=new Blob([JSON.stringify(data)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='株日記バックアップ.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('restore').onchange=e=>{let f=e.target.files[0];if(!f)return;let reader=new FileReader();reader.onload=()=>{try{data=JSON.parse(reader.result);localStorage.setItem('stockDiary',JSON.stringify(data));fresh();if(data.length)load(0);alert('バックアップを読み込みました')}catch(err){alert('ファイルを読み込めませんでした')}};reader.readAsText(f)};
+draw();renderList();if(data.length)load(0);
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body></html>
